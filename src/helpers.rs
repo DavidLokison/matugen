@@ -1,7 +1,7 @@
 use crate::{
     color::{
-        base16::{generate_base16_schemes, Backend},
-        color::{get_source_color, Source},
+        base16::generate_base16,
+        color::{generate_dynamic_scheme, get_source_color, Source},
         format::argb_from_rgb,
         parse::parse_css_color,
     },
@@ -126,15 +126,17 @@ pub fn generate_schemes_and_theme(
 
     let contrast = args.contrast.or(config_file.config.contrast);
 
-    let (schemes, theme) = match source_color {
+    let (schemes, theme, base_16) = match source_color {
         Some(color) => {
             let theme = ThemeBuilder::with_source(color).build();
-            let (scheme_dark, scheme_light) = get_schemes(color, scheme_type, &contrast);
+            let scheme_dark = generate_dynamic_scheme(scheme_type, color, true, contrast);
+            let scheme_light = generate_dynamic_scheme(scheme_type, color, false, contrast);
 
+            let base_16 = generate_base16(&scheme_dark, &scheme_light);
             let mut schemes = get_custom_color_schemes(
                 color,
-                scheme_dark,
-                scheme_light,
+                scheme_dark.into(),
+                scheme_light.into(),
                 &config_file.config.custom_colors,
                 &args.r#type,
                 &contrast,
@@ -144,20 +146,9 @@ pub fn generate_schemes_and_theme(
 
             schemes.dark.insert("source_color".to_owned(), color);
             schemes.light.insert("source_color".to_owned(), color);
-            (Some(schemes), Some(theme))
+            (Some(schemes), Some(theme), Some(base_16))
         }
-        None => (None, None),
-    };
-
-    let base_16 = match &args.source {
-        Source::Json { path: _ } => None,
-        _ => Some(
-            generate_base16_schemes(
-                &args.source,
-                args.base16_backend.clone().unwrap_or(Backend::Wal),
-            )
-            .wrap_err("Failed to generate base16 color schemes.")?,
-        ),
+        None => (None, None, None),
     };
 
     Ok((schemes, source_color, theme, base_16))

@@ -6,6 +6,7 @@ use material_colors::{
     color::Argb,
     hct::Hct,
     utils::math::{difference_degrees, rotate_direction, sanitize_degrees_double},
+    dynamic_color::{DynamicColor, DynamicScheme, ContrastCurve, ToneDeltaPair, TonePolarity},
 };
 
 use crate::{
@@ -41,6 +42,376 @@ impl Backend {
 
 pub trait PaletteBackend {
     fn extract(&self, image: &RgbImage) -> Vec<Rgb>;
+}
+
+pub trait DynamicBase16Colors {
+    fn base00(&self) -> Argb;
+    fn base01(&self) -> Argb;
+    fn base02(&self) -> Argb;
+    fn base03(&self) -> Argb;
+    fn base04(&self) -> Argb;
+    fn base05(&self) -> Argb;
+    fn base06(&self) -> Argb;
+    fn base07(&self) -> Argb;
+    fn base08(&self) -> Argb;
+    fn base09(&self) -> Argb;
+    fn base0a(&self) -> Argb;
+    fn base0b(&self) -> Argb;
+    fn base0c(&self) -> Argb;
+    fn base0d(&self) -> Argb;
+    fn base0e(&self) -> Argb;
+    fn base0f(&self) -> Argb;
+}
+
+// Copyright (c) Savchenko Ivan "Aiving" 2023-2024
+// https://github.com/Aiving/material-colors/blob/0.4.2/src/dynamic_color/material_dynamic_colors.rs#L15
+// Used under MIT License
+macro_rules! define_key {
+    ($name:ident => $palette:ident; [tone, $scheme_argument:ident] => $tone:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$scheme_argument| $tone,
+                false,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+    };
+
+    ($name:ident => $palette:ident; [tone, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| $tone,
+                false,
+                Some(|$background_scheme_argument| $background),
+                None,
+                None,
+                None,
+            )
+        }
+    };
+
+    ($name:ident => $palette:ident; [tone, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [contrast_curve] => $contrast_curve:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| $tone,
+                false,
+                Some(|$background_scheme_argument| $background),
+                None,
+                Some($contrast_curve),
+                None,
+            )
+        }
+    };
+
+    ($name:ident => $palette:ident; [tone, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [second_background, $second_background_scheme_argument:ident] => $second_background:expr; [contrast_curve] => $contrast_curve:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| $tone,
+                false,
+                Some(|$background_scheme_argument| $background),
+                Some(|$second_background_scheme_argument| $second_background),
+                Some($contrast_curve),
+                None,
+            )
+        }
+    };
+
+    ($name:ident => $palette:ident; [tone, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [contrast_curve] => $contrast_curve:expr; [tone_delta_pair, $tone_delta_pair_argument:ident] => $tone_delta_pair:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| $tone,
+                false,
+                Some(|$background_scheme_argument| $background),
+                None,
+                Some($contrast_curve),
+                Some(|$tone_delta_pair_argument| $tone_delta_pair),
+            )
+        }
+    };
+
+    (background $name:ident => $palette:ident; [tone, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [contrast_curve] => $contrast_curve:expr; [tone_delta_pair, $tone_delta_pair_argument:ident] => $tone_delta_pair:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| $tone,
+                true,
+                Some(|$background_scheme_argument| $background),
+                None,
+                Some($contrast_curve),
+                Some(|$tone_delta_pair_argument| $tone_delta_pair),
+            )
+        }
+    };
+
+    (background $name:ident => $palette:ident; [tone, $scheme_argument:ident] => $tone:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$scheme_argument| $tone,
+                true,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+    };
+
+    // own additions
+    ($name:ident => $palette:ident; [tone chroma, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [contrast_curve] => $contrast_curve:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| {
+                    Self::_find_desired_chroma_by_tone(
+                        $tone_scheme_argument.$palette.hue(),
+                        $tone_scheme_argument.$palette.chroma(),
+                        $tone,
+                        $tone_scheme_argument.is_dark,
+                    )
+                },
+                false,
+                Some(|$background_scheme_argument| $background),
+                None,
+                Some($contrast_curve),
+                None,
+            )
+        }
+    };
+
+    ($name:ident => $palette:ident; [tone chroma, $tone_scheme_argument:ident] => $tone:expr; [background, $background_scheme_argument:ident] => $background:expr; [contrast_curve] => $contrast_curve:expr; [tone_delta_pair, $tone_delta_pair_argument:ident] => $tone_delta_pair:expr;) => {
+        pub fn $name() -> DynamicColor {
+            DynamicColor::new(
+                stringify!($name),
+                |scheme| &scheme.$palette,
+                |$tone_scheme_argument| {
+                    Self::_find_desired_chroma_by_tone(
+                        $tone_scheme_argument.$palette.hue(),
+                        $tone_scheme_argument.$palette.chroma(),
+                        $tone,
+                        $tone_scheme_argument.is_dark,
+                    )
+                },
+                false,
+                Some(|$background_scheme_argument| $background),
+                None,
+                Some($contrast_curve),
+                Some(|$tone_delta_pair_argument| $tone_delta_pair),
+            )
+        }
+    };
+}
+
+// Based off of material_colors::dynamic_color::material_dynamic_colors::MaterialDynamicColors
+// See https://docs.rs/material-colors/0.4.2/src/material_colors/dynamic_color/material_dynamic_colors.rs.html
+// Semantics: See https://github.com/chriskempson/base16/blob/main/styling.md
+pub struct Base16Colors;
+
+impl Base16Colors {
+    // Default Background
+    define_key! {
+        background base00 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 4.0 } else { 98.0 };
+    }
+
+    // Lighter Background
+    define_key! {
+        background base01 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 14.0 } else { 88.0 };
+    }
+
+    // Selection Background
+    define_key! {
+        background base02 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 20.0 } else { 80.0 };
+    }
+
+    // Comments, Invisibles
+    define_key! {
+        base03 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 60.0 } else { 40.0 };
+    }
+
+    // Dark Foreground
+    define_key! {
+        base04 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 80.0 } else { 30.0 };
+    }
+
+    // Default Foreground
+    define_key! {
+        base05 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 90.0 } else { 10.0 };
+    }
+
+    // Light Foreground
+    define_key! {
+        base06 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 94.0 } else { 6.0 };
+    }
+
+    // Lightest Foreground
+    define_key! {
+        base07 => neutral_palette;
+        [tone, scheme] => if scheme.is_dark { 96.0 } else { 4.0 };
+    }
+
+    // Variables, Diff Deleted
+    define_key! {
+        base08 => error_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 70.0 } else { 30.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+    }
+
+    // Literals
+    define_key! {
+        base09 => tertiary_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 80.0 } else { 30.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0c(), Self::base09(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Classes
+    define_key! {
+        base0a => primary_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 70.0 } else { 40.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0a(), Self::base0d(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Strings, Diff Inserted
+    define_key! {
+        base0b => neutral_variant_palette;
+        [tone, scheme] => if scheme.is_dark { 80.0 } else { 30.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0f(), Self::base0b(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Escape Characters
+    define_key! {
+        base0c => tertiary_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 70.0 } else { 50.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0c(), Self::base09(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Functions
+    define_key! {
+        base0d => primary_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 80.0 } else { 30.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0a(), Self::base0d(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Keywords, Diff Changed
+    define_key! {
+        base0e => secondary_palette;
+        [tone chroma, scheme] => if scheme.is_dark { 80.0 } else { 30.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+    }
+
+    // Deprecated
+    define_key! {
+        base0f => neutral_variant_palette;
+        [tone, scheme] => if scheme.is_dark { 70.0 } else { 50.0 };
+        [background, _scheme] => Self::base00();
+        [contrast_curve] => ContrastCurve { low: 3.0, normal: 4.5, medium: 7.0, high: 11.0 };
+        [tone_delta_pair, _scheme] => ToneDeltaPair::new(Self::base0f(), Self::base0b(), 10.0, TonePolarity::Nearer, true);
+    }
+
+    // Copyright (c) Savchenko Ivan "Aiving" 2023-2024
+    // https://github.com/Aiving/material-colors/blob/0.4.2/src/dynamic_color/material_dynamic_colors.rs#L508
+    // Used under MIT License
+    fn _find_desired_chroma_by_tone(
+        hue: f64,
+        chroma: f64,
+        tone: f64,
+        by_decreasing_tone: bool,
+    ) -> f64 {
+        let mut answer = tone;
+
+        let mut closest_to_chroma = Hct::from(hue, chroma, tone);
+
+        if closest_to_chroma.get_chroma() < chroma {
+            let mut chroma_peak = closest_to_chroma.get_chroma();
+
+            while closest_to_chroma.get_chroma() < chroma {
+                answer += if by_decreasing_tone { -1.0 } else { 1.0 };
+
+                let potential_solution = Hct::from(hue, chroma, answer);
+
+                if chroma_peak > potential_solution.get_chroma() {
+                    break;
+                }
+
+                if (potential_solution.get_chroma() - chroma).abs() < 0.4 {
+                    break;
+                }
+
+                let (potential_delta, current_delta) = (
+                    (potential_solution.get_chroma() - chroma).abs(),
+                    (closest_to_chroma.get_chroma() - chroma).abs(),
+                );
+
+                if potential_delta < current_delta {
+                    closest_to_chroma = potential_solution;
+                }
+
+                chroma_peak = chroma_peak.max(potential_solution.get_chroma());
+            }
+        }
+
+        answer
+    }
+}
+
+macro_rules! from_helper {
+    ($name:ident) => {
+        fn $name(&self) -> Argb {
+            Base16Colors::$name().get_argb(self)
+        }
+    };
+}
+impl DynamicBase16Colors for DynamicScheme {
+    from_helper!{base00}
+    from_helper!{base01}
+    from_helper!{base02}
+    from_helper!{base03}
+    from_helper!{base04}
+    from_helper!{base05}
+    from_helper!{base06}
+    from_helper!{base07}
+    from_helper!{base08}
+    from_helper!{base09}
+    from_helper!{base0a}
+    from_helper!{base0b}
+    from_helper!{base0c}
+    from_helper!{base0d}
+    from_helper!{base0e}
+    from_helper!{base0f}
 }
 
 fn drag_hue(source_hue: f64, target_hue: f64, amount: f64) -> f64 {
@@ -149,6 +520,34 @@ fn interpolate_grays(base00: &Rgb, base05: &Rgb, dark: bool) -> Vec<Argb> {
     }
 
     grays
+}
+
+fn generate_base16_from_scheme(scheme: &DynamicScheme) -> IndexMap<String, Argb> {
+    let mut ret = IndexMap::new();
+    ret.insert("base00".into(), scheme.base00());
+    ret.insert("base01".into(), scheme.base01());
+    ret.insert("base02".into(), scheme.base02());
+    ret.insert("base03".into(), scheme.base03());
+    ret.insert("base04".into(), scheme.base04());
+    ret.insert("base05".into(), scheme.base05());
+    ret.insert("base06".into(), scheme.base06());
+    ret.insert("base07".into(), scheme.base07());
+    ret.insert("base08".into(), scheme.base08());
+    ret.insert("base09".into(), scheme.base09());
+    ret.insert("base0a".into(), scheme.base0a());
+    ret.insert("base0b".into(), scheme.base0b());
+    ret.insert("base0c".into(), scheme.base0c());
+    ret.insert("base0d".into(), scheme.base0d());
+    ret.insert("base0e".into(), scheme.base0e());
+    ret.insert("base0f".into(), scheme.base0f());
+    ret
+}
+
+pub fn generate_base16(scheme_dark: &DynamicScheme, scheme_light: &DynamicScheme) -> Schemes {
+    Schemes {
+        dark: generate_base16_from_scheme(scheme_dark),
+        light: generate_base16_from_scheme(scheme_light),
+    }
 }
 
 pub fn generate_base16_schemes(source: &Source, backend: Backend) -> Result<Schemes, Report> {
